@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { INITIAL_GALLERY_IMAGES } from '../data/weddingData';
 import { GalleryImage } from '../types/wedding';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Trash2, X, ZoomIn, Lock, Image as ImageIcon, Upload, Sparkles } from 'lucide-react';
+import { Plus, Trash2, X, ZoomIn, Lock, Image as ImageIcon, Upload, Sparkles, AlertTriangle, Check } from 'lucide-react';
 
 const GALLERY_STORAGE_KEY = 'durgesh_wedding_photo_gallery_v1';
 
@@ -21,6 +21,10 @@ export const PhotoGallery: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [lightboxImage, setLightboxImage] = useState<GalleryImage | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  // In-app delete confirmation state (avoids window.confirm iframe blocks)
+  const [photoToDelete, setPhotoToDelete] = useState<GalleryImage | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // New photo form state
   const [newTitle, setNewTitle] = useState('');
@@ -44,6 +48,11 @@ export const PhotoGallery: React.FC = () => {
     if (activeCategory === 'All') return true;
     return img.category === activeCategory;
   });
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   // Handle local file selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,27 +91,60 @@ export const PhotoGallery: React.FC = () => {
       description: newDescription.trim() || undefined,
     };
 
-    setImages([newPhoto, ...images]);
+    const updated = [newPhoto, ...images];
+    setImages(updated);
+    try {
+      localStorage.setItem(GALLERY_STORAGE_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.warn('LocalStorage save error:', e);
+    }
+
     setIsAddModalOpen(false);
     setNewTitle('');
     setNewDescription('');
     setImageUrlInput('');
     setPreviewDataUrl('');
     setUploadError('');
+    showToast('Photo added to gallery successfully!');
   };
 
-  const handleDeletePhoto = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this photo from the gallery?')) {
-      setImages(images.filter((img) => img.id !== id));
-      if (lightboxImage?.id === id) {
-        setLightboxImage(null);
-      }
+  const triggerDelete = (img: GalleryImage, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!isAdmin) {
+      openAuthModal();
+      return;
     }
+    setPhotoToDelete(img);
+  };
+
+  const confirmDeletePhoto = () => {
+    if (!photoToDelete) return;
+    const targetId = photoToDelete.id;
+    const updated = images.filter((img) => img.id !== targetId);
+    setImages(updated);
+    try {
+      localStorage.setItem(GALLERY_STORAGE_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.warn('LocalStorage save error:', e);
+    }
+
+    if (lightboxImage?.id === targetId) {
+      setLightboxImage(null);
+    }
+    setPhotoToDelete(null);
+    showToast('Photo deleted from gallery successfully.');
   };
 
   return (
     <section id="gallery" className="py-16 sm:py-24 px-4 bg-[#FAF5EB] relative border-b border-[#D4AF37]/30">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-20 right-4 z-50 p-3.5 rounded-xl bg-[#240409] text-[#FFF2B2] border border-[#D4AF37] shadow-2xl flex items-center gap-2 text-xs font-semibold animate-bounce">
+          <Check className="w-4 h-4 text-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-10 sm:mb-12">
@@ -140,10 +182,10 @@ export const PhotoGallery: React.FC = () => {
             ) : (
               <button
                 onClick={openAuthModal}
-                className="inline-flex items-center gap-1.5 text-xs text-[#8C6208] hover:text-[#3B0710] py-1 px-3 rounded-lg border border-[#D4AF37]/40 hover:bg-[#FFFDF9] transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-[#8C6208] hover:text-[#3B0710] py-1.5 px-3.5 rounded-lg border border-[#D4AF37]/50 bg-[#FFFDF9] hover:bg-[#FFF8ED] transition-colors shadow-sm"
               >
-                <Lock className="w-3 h-3 text-[#B8860B]" />
-                <span>Host Login to Manage Gallery</span>
+                <Lock className="w-3.5 h-3.5 text-[#B8860B]" />
+                <span>Host Login to Manage &amp; Delete Photos</span>
               </button>
             )}
           </div>
@@ -217,23 +259,26 @@ export const PhotoGallery: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Host Delete Button */}
+                  {/* Host Delete Button - Prominent & Reliable */}
                   {isAdmin && (
                     <button
-                      onClick={(e) => handleDeletePhoto(img.id, e)}
+                      onClick={(e) => triggerDelete(img, e)}
                       title="Delete Photo (Host only)"
-                      className="absolute top-3 right-3 p-2 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-lg transition-transform hover:scale-110 z-10"
+                      className="absolute top-3 right-3 p-2 rounded-xl bg-red-600 hover:bg-red-700 text-white shadow-xl transition-all hover:scale-110 active:scale-95 z-20 flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete</span>
                     </button>
                   )}
                 </div>
 
                 {/* Details Footer */}
                 <div className="p-4 bg-gradient-to-b from-[#FFFDF9] to-[#FAF5EB]">
-                  <h3 className="font-serif-royal font-bold text-base text-[#3B0710] group-hover:text-[#801323] transition-colors truncate">
-                    {img.title}
-                  </h3>
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-serif-royal font-bold text-base text-[#3B0710] group-hover:text-[#801323] transition-colors truncate">
+                      {img.title}
+                    </h3>
+                  </div>
                   {img.description && (
                     <p className="text-xs text-[#78350F] mt-1 line-clamp-2">
                       {img.description}
@@ -298,13 +343,68 @@ export const PhotoGallery: React.FC = () => {
 
               {isAdmin && (
                 <button
-                  onClick={(e) => handleDeletePhoto(lightboxImage.id, e)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shrink-0"
+                  onClick={() => triggerDelete(lightboxImage)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shrink-0 cursor-pointer transition-colors shadow-md"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-4 h-4" />
                   <span>Delete Photo</span>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* In-App Delete Confirmation Modal (NO window.confirm) */}
+      {photoToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-2xl bg-[#FFFDF9] p-6 border-2 border-red-500/50 shadow-2xl text-[#2C1810]">
+            <div className="flex items-center gap-3 mb-4 pb-3 border-b border-red-200">
+              <div className="p-2.5 rounded-full bg-red-100 text-red-600 shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-royal text-lg font-bold text-red-900">
+                  Delete Photo Confirmation
+                </h3>
+                <p className="text-xs text-[#8C6208]">
+                  Host Action · Durgesh Sharma
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#5C2E0A] mb-4 leading-relaxed">
+              Are you sure you want to permanently delete{' '}
+              <strong className="text-red-900">&ldquo;{photoToDelete.title}&rdquo;</strong> from the royal wedding gallery?
+            </p>
+
+            {photoToDelete.imageUrl && (
+              <div className="mb-4 h-28 rounded-xl overflow-hidden bg-neutral-100 border border-[#D4AF37]/30">
+                <img
+                  src={photoToDelete.imageUrl}
+                  alt="To delete"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPhotoToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 font-semibold text-xs hover:bg-neutral-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeletePhoto}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Yes, Delete Photo</span>
+              </button>
             </div>
           </div>
         </div>

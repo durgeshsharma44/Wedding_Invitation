@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { INITIAL_BLESSINGS } from '../data/weddingData';
 import { Blessing } from '../types/wedding';
 import { useAuth } from '../context/AuthContext';
-import { Heart, Send, Sparkles, MessageCircle, Trash2, ShieldAlert } from 'lucide-react';
+import { Heart, Send, Sparkles, MessageCircle, Trash2, ShieldAlert, AlertTriangle, Check, Lock } from 'lucide-react';
 
 interface BlessingsGuestbookProps {
   id?: string;
@@ -11,7 +11,7 @@ interface BlessingsGuestbookProps {
 const STORAGE_KEY = 'durgesh_bhumika_wedding_blessings';
 
 export const BlessingsGuestbook: React.FC<BlessingsGuestbookProps> = ({ id = 'blessings' }) => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, openAuthModal } = useAuth();
   const [blessings, setBlessings] = useState<Blessing[]>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -26,8 +26,11 @@ export const BlessingsGuestbook: React.FC<BlessingsGuestbookProps> = ({ id = 'bl
   const [relation, setRelation] = useState('');
   const [message, setMessage] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const [deletedNotice, setDeletedNotice] = useState(false);
   const [error, setError] = useState('');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // In-app delete confirmation state (NO window.confirm)
+  const [blessingToDelete, setBlessingToDelete] = useState<Blessing | null>(null);
 
   useEffect(() => {
     try {
@@ -36,6 +39,11 @@ export const BlessingsGuestbook: React.FC<BlessingsGuestbookProps> = ({ id = 'bl
       console.warn('LocalStorage error:', e);
     }
   }, [blessings]);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,25 +60,55 @@ export const BlessingsGuestbook: React.FC<BlessingsGuestbookProps> = ({ id = 'bl
       timestamp: 'Just now',
     };
 
-    setBlessings([newBlessing, ...blessings]);
+    const updated = [newBlessing, ...blessings];
+    setBlessings(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Storage sync error:', e);
+    }
+
     setSenderName('');
     setRelation('');
     setMessage('');
     setError('');
     setSubmitted(true);
+    showToast('Your blessing has been posted with love!');
     setTimeout(() => setSubmitted(false), 4000);
   };
 
-  const handleDeleteBlessing = (blessingId: string) => {
-    if (window.confirm('Delete this blessing as host?')) {
-      setBlessings(blessings.filter((b) => b.id !== blessingId));
-      setDeletedNotice(true);
-      setTimeout(() => setDeletedNotice(false), 3000);
+  const triggerDeleteBlessing = (b: Blessing) => {
+    if (!isAdmin) {
+      openAuthModal();
+      return;
     }
+    setBlessingToDelete(b);
+  };
+
+  const confirmDeleteBlessing = () => {
+    if (!blessingToDelete) return;
+    const targetId = blessingToDelete.id;
+    const updated = blessings.filter((b) => b.id !== targetId);
+    setBlessings(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Storage sync error:', e);
+    }
+    setBlessingToDelete(null);
+    showToast('Blessing deleted successfully.');
   };
 
   return (
     <section id={id} className="py-16 sm:py-24 px-4 bg-[#FAF5EB] text-[#2C1810] relative">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-20 right-4 z-50 p-3.5 rounded-xl bg-[#240409] text-[#FFF2B2] border border-[#D4AF37] shadow-2xl flex items-center gap-2 text-xs font-semibold animate-bounce">
+          <Check className="w-4 h-4 text-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       <div className="max-w-5xl mx-auto">
         {/* Section Header */}
         <div className="text-center mb-12 sm:mb-16">
@@ -89,18 +127,22 @@ export const BlessingsGuestbook: React.FC<BlessingsGuestbookProps> = ({ id = 'bl
             Leave your warm prayers and congratulations for Durgesh &amp; Bhumika as they begin their sacred journey together.
           </p>
 
-          {isAdmin && (
-            <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 border border-amber-300 text-amber-900 text-xs font-medium">
-              <ShieldAlert className="w-3.5 h-3.5 text-amber-700" />
-              <span>Host Moderation Active: You can delete any inappropriate blessings below.</span>
-            </div>
-          )}
-
-          {deletedNotice && (
-            <div className="mt-2 text-xs text-red-600 font-medium">
-              Blessing message has been deleted.
-            </div>
-          )}
+          <div className="mt-4 flex items-center justify-center gap-3">
+            {isAdmin ? (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 border border-amber-300 text-amber-900 text-xs font-medium">
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-700" />
+                <span>Host Moderation Active: Click the red delete icon on any message to delete.</span>
+              </div>
+            ) : (
+              <button
+                onClick={openAuthModal}
+                className="inline-flex items-center gap-1.5 text-xs text-[#8C6208] hover:text-[#3B0710] py-1 px-3 rounded-lg border border-[#D4AF37]/50 bg-[#FFFDF9] hover:bg-[#FFF8ED] transition-colors"
+              >
+                <Lock className="w-3 h-3 text-[#B8860B]" />
+                <span>Host Login to Moderate Blessings</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -215,15 +257,16 @@ export const BlessingsGuestbook: React.FC<BlessingsGuestbookProps> = ({ id = 'bl
                       {b.timestamp}
                     </span>
 
-                    {/* Host-only Delete Button */}
+                    {/* Host-only Delete Button - Prominent red button */}
                     {isAdmin && (
                       <button
-                        onClick={() => handleDeleteBlessing(b.id)}
-                        className="p-1 rounded text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors ml-1"
-                        title="Delete inappropriate blessing (Host only)"
+                        onClick={() => triggerDeleteBlessing(b)}
+                        className="p-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 transition-colors ml-1.5 flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
+                        title="Delete this blessing (Host only)"
                         aria-label="Delete blessing"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                        <span className="hidden sm:inline">Delete</span>
                       </button>
                     )}
                   </div>
@@ -237,6 +280,54 @@ export const BlessingsGuestbook: React.FC<BlessingsGuestbookProps> = ({ id = 'bl
           </div>
         </div>
       </div>
+
+      {/* In-App Delete Confirmation Modal for Blessings (NO window.confirm) */}
+      {blessingToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-2xl bg-[#FFFDF9] p-6 border-2 border-red-500/50 shadow-2xl text-[#2C1810]">
+            <div className="flex items-center gap-3 mb-4 pb-3 border-b border-red-200">
+              <div className="p-2.5 rounded-full bg-red-100 text-red-600 shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-royal text-lg font-bold text-red-900">
+                  Delete Inappropriate Blessing
+                </h3>
+                <p className="text-xs text-[#8C6208]">
+                  Host Action · Durgesh Sharma
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#5C2E0A] mb-3 leading-relaxed">
+              Are you sure you want to permanently delete this message sent by{' '}
+              <strong className="text-red-900">{blessingToDelete.sender}</strong>?
+            </p>
+
+            <div className="p-3 rounded-xl bg-[#FAF5EB] border border-[#D4AF37]/30 text-xs text-[#4A2010] italic mb-4">
+              &ldquo;{blessingToDelete.message}&rdquo;
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setBlessingToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 font-semibold text-xs hover:bg-neutral-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteBlessing}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Yes, Delete Blessing</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };
